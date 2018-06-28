@@ -38,7 +38,7 @@ pip install -r requirements.txt
 Baixe os arquivos executando o comando:
 
 ```bash
-./download.sh
+./create-download-scripts.sh && ./download.sh
 ```
 
 > Nota: esse script baixará dados para anos/meses pré-estabelecidos. Caso

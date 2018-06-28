@@ -7,6 +7,12 @@ import os
 import zipfile
 
 import rows
+from tqdm import tqdm
+
+# TODO: replace all:
+#       'Detalhamento das informações bloqueado.'
+#       'Informações protegidas por sigilo, nos termos da legislação, para garantia da segurança da sociedade e do Estado'
+# in: codigo_favorecido, data_pagamento_original, gestao_pagamento and numero_documento.
 
 
 class NotNullTextWrapper(io.TextIOWrapper):
@@ -79,42 +85,39 @@ def read_files(filenames, extract_row):
 
 
 def merge_files(filenames, input_encoding, output_filename, output_encoding,
-        extract_row, print_stats, print_interval=10000):
+                extract_row):
 
-    with lzma.LZMAFile(output_filename, mode='wb', format=lzma.FORMAT_XZ) as xz_fobj, \
-        io.TextIOWrapper(xz_fobj, encoding='utf-8') as output_fobj:
-        # TODO: run extractions in parallel
-        data = read_files(filenames, extract_row)
-
-        first_row = next(data)
-        writer = csv.DictWriter(output_fobj, fieldnames=first_row.keys())
-        writer.writeheader()
-        writer.writerow(first_row)
-
-        for index, row in enumerate(data, start=2):
-            writer.writerow(row)
-            if index % print_interval == 0:
-                print_stats(index, row)
-
-
-def print_stats(index, row):
-    print(f'{row["ano"]}-{row["mes"]} {index:012d}')
+    output_fobj = io.TextIOWrapper(
+        lzma.LZMAFile(output_filename, mode='wb', format=lzma.FORMAT_XZ),
+        encoding='utf-8',
+    )
+    data = read_files(filenames, extract_row)
+    writer = None
+    for row in tqdm(data):
+        if writer is None:
+            writer = csv.DictWriter(output_fobj, fieldnames=list(row.keys()))
+            writer.writeheader()
+        writer.writerow(row)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('type', choices=['gastos-diretos', 'transferencias'])
     args = parser.parse_args()
+    data_path = pathlib.Path('data')
+    output_path = data_path / 'output'
+    download_path = data_path / 'download'
+    for path in (data_path, output_path, download_path):
+        if not path.exists():
+            path.mkdir()
 
     discover_dialect = rows.plugins.csv.discover_dialect
     slug = rows.plugins.utils.slug
     input_encoding = 'iso-8859-1'
-    filenames = sorted(glob.glob(f'download/{args.type}-*.zip'))
-    output_filename = f'output/{args.type}.csv.xz'
+    filenames = sorted(glob.glob(str(download_path / f'{args.type}-*.zip')))
+    output_filename = str(output_path / f'{args.type}.csv.xz')
     output_encoding = 'utf-8'
-    if not os.path.exists('output'):
-        os.mkdir('output')
     convert_function = {'transferencias': convert_transfer,
                         'gastos-diretos': convert_spend, }[args.type]
-    merge_files(filenames, input_encoding, output_filename,
-                output_encoding, convert_function, print_stats)
+    merge_files(filenames, input_encoding, output_filename, output_encoding,
+                convert_function)
